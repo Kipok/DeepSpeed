@@ -149,14 +149,6 @@ void BertTransformerLayer<T>::Forward(int bsz,
                                       const T* input_mask_ptr,
                                       const T* attn_qkvw_ptr,
                                       const T* attn_qkvb_ptr,
-                                      const T* attn_ow_ptr,
-                                      const T* attn_ob_ptr,
-                                      const T* attn_nw_ptr,
-                                      const T* attn_nb_ptr,
-                                      const T* inter_w_ptr,
-                                      const T* inter_b_ptr,
-                                      const T* output_w_ptr,
-                                      const T* output_b_ptr,
                                       const T* norm_w_ptr,
                                       const T* norm_b_ptr,
                                       T* out_ptr,
@@ -167,10 +159,7 @@ void BertTransformerLayer<T>::Forward(int bsz,
                                       T* soft_out_ptr,
                                       T* ctx_bufB_ptr,
                                       T* attn_o_inp_ptr,
-                                      T* add_res_ptr,
-                                      T* ff1_inp_ptr,
-                                      T* gelu_inp_ptr,
-                                      T* ff2_inp_ptr)
+                                      T* add_res_ptr)
 {
     cublasSetStream(_cublasHandle, _stream);
 
@@ -228,67 +217,6 @@ void BertTransformerLayer<T>::Forward(int bsz,
 
     launch_transform4d_0213<T>(
         attn_o_inp_ptr, buf_1, bsz, _heads, _seq_length, _hidden_size, _stream, 1);
-
-    if (_pre_or_postLayerNorm)
-        _attn_out_linear.Forward(bsz_seq, attn_o_inp_ptr, attn_ow_ptr, buf_1, _cublasHandle);
-    else
-        _attn_out_linear.Forward(bsz_seq, attn_o_inp_ptr, attn_ow_ptr, ff1_inp_ptr, _cublasHandle);
-
-    // attn output dropout.
-    if (_pre_or_postLayerNorm)
-        _attn_output_dropout.ForwardWithBias(
-            bsz_seq, add_res_ptr, buf_1, input_ptr, attn_ob_ptr, _stream);
-    else
-        _attn_output_dropout.ForwardWithBias(
-            bsz_seq, add_res_ptr, ff1_inp_ptr, input_ptr, attn_ob_ptr, _stream);
-
-    if (_pre_or_postLayerNorm) {
-        if (_attn_layer_norm.UseMean())
-            _attn_layer_norm.ForwardCheckpoint(
-                bsz_seq, ff1_inp_ptr, add_res_ptr, attn_nw_ptr, attn_nb_ptr, _stream, true);
-        else
-            _attn_layer_norm.Forward(
-                bsz_seq, ff1_inp_ptr, add_res_ptr, attn_nw_ptr, attn_nb_ptr, _stream, true);
-    } else {
-        if (_attn_layer_norm.UseMean())
-            _attn_layer_norm.ForwardCheckpoint(
-                bsz_seq, ff1_inp_ptr, add_res_ptr, attn_nw_ptr, attn_nb_ptr, _stream, true);
-        else
-            _attn_layer_norm.Forward(
-                bsz_seq, ff1_inp_ptr, add_res_ptr, attn_nw_ptr, attn_nb_ptr, _stream, true);
-    }
-
-    _ff1.Forward(bsz_seq,
-                 ff1_inp_ptr,
-                 inter_w_ptr,
-                 (_gelu_checkpoint ? ff2_inp_ptr : gelu_inp_ptr),
-                 _cublasHandle);
-
-    _gelu.ForwardWithBiasAdd(bsz_seq,
-                             (_gelu_checkpoint ? ff2_inp_ptr : gelu_inp_ptr),
-                             inter_b_ptr,
-                             (_gelu_checkpoint ? buf_2 : ff2_inp_ptr),
-                             _stream);
-
-    _ff2.Forward(
-        bsz_seq, (_gelu_checkpoint ? buf_2 : ff2_inp_ptr), output_w_ptr, out_ptr, _cublasHandle);
-
-    // layer output dropout.
-    if (_pre_or_postLayerNorm)
-        _layer_output_dropout.ForwardWithBias(
-            bsz_seq, out_ptr, out_ptr, add_res_ptr, output_b_ptr, _stream);
-    else
-        _layer_output_dropout.ForwardWithBias(
-            bsz_seq, inp_norm_ptr, out_ptr, ff1_inp_ptr, output_b_ptr, _stream);
-
-    if (!_pre_or_postLayerNorm) {
-        if (_layer_norm.UseMean())
-            _layer_norm.ForwardCheckpoint(
-                bsz_seq, out_ptr, inp_norm_ptr, norm_w_ptr, norm_b_ptr, _stream, true);
-        else
-            _layer_norm.Forward(
-                bsz_seq, out_ptr, inp_norm_ptr, norm_w_ptr, norm_b_ptr, _stream, true);
-    }
 }
 
 template <typename T>
@@ -304,31 +232,14 @@ void BertTransformerLayer<T>::Backward(int bsz,
                                        const T* ctx_bufB_ptr,
                                        const T* attn_o_inp_ptr,
                                        const T* add_res_ptr,
-                                       const T* ff1_inp_ptr,
-                                       const T* gelu_inp_ptr,
-                                       const T* ff2_inp_ptr,
                                        const T* input_mask_ptr,
                                        const T* attn_qkvw_ptr,
-                                       const T* attn_ow_ptr,
-                                       const T* attn_nw_ptr,
-                                       const T* attn_nb_ptr,
-                                       const T* inter_w_ptr,
-                                       const T* inter_b_ptr,
-                                       const T* output_w_ptr,
                                        const T* norm_w_ptr,
                                        const T* norm_b_ptr,
 
                                        T* grad_input_ptr,
                                        T* grad_attn_qkvw_ptr,
                                        T* grad_attn_qkvb_ptr,
-                                       T* grad_attn_ow_ptr,
-                                       T* grad_attn_ob_ptr,
-                                       T* grad_attn_nw_ptr,
-                                       T* grad_attn_nb_ptr,
-                                       T* grad_inter_w_ptr,
-                                       T* grad_inter_b_ptr,
-                                       T* grad_output_w_ptr,
-                                       T* grad_output_b_ptr,
                                        T* grad_norm_w_ptr,
                                        T* grad_norm_b_ptr)
 {
@@ -352,127 +263,7 @@ void BertTransformerLayer<T>::Backward(int bsz,
     int bsz_seq = bsz * _seq_length;
     int bsz_heads = bsz * _heads;
 
-    if (!_pre_or_postLayerNorm) {
-        if (_layer_norm.UseMean())
-            _layer_norm.Backward(bsz_seq,
-                                 grad_output_ptr,
-                                 norm_w_ptr,
-                                 grad_norm_w_ptr,
-                                 grad_norm_b_ptr,
-                                 streams,
-                                 buf_1,
-                                 inp_norm_ptr);
-
-        else
-            _layer_norm.Backward(bsz_seq,
-                                 grad_output_ptr,
-                                 norm_w_ptr,
-                                 norm_b_ptr,
-                                 grad_norm_w_ptr,
-                                 grad_norm_b_ptr,
-                                 streams,
-                                 buf_1,
-                                 output_ptr);
-    }
-
-    if (_pre_or_postLayerNorm)
-        _layer_output_dropout.Backward(bsz_seq, buf_0, grad_output_ptr, _stream);
-    else
-        _layer_output_dropout.Backward(bsz_seq, buf_0, buf_1, _stream);
-
-    const T* layer_dropout_buf = _layer_output_dropout.HasDropout()
-                                     ? buf_0
-                                     : (_pre_or_postLayerNorm ? grad_output_ptr : buf_1);
-
-    if (_gelu_checkpoint)
-        _gelu.ForwardWithBiasAdd(bsz_seq, ff2_inp_ptr, inter_b_ptr, buf_2, _stream);
-    _ff2.Backward(bsz_seq,
-                  layer_dropout_buf,
-                  (_gelu_checkpoint ? buf_2 : ff2_inp_ptr),
-                  output_w_ptr,
-                  grad_output_w_ptr,
-                  grad_output_b_ptr,
-                  _cublasHandle,
-                  _stream,
-                  ff2_buf);
-
-    _gelu.Backward(
-        bsz_seq, ff2_buf, (_gelu_checkpoint ? ff2_inp_ptr : gelu_inp_ptr), inter_b_ptr, _stream);
-
-    _ff1.Backward(bsz_seq,
-                  ff2_buf,
-                  ff1_inp_ptr,
-                  inter_w_ptr,
-                  grad_inter_w_ptr,
-                  grad_inter_b_ptr,
-                  _cublasHandle,
-                  _stream,
-                  buf_3);
-
-    if (!_pre_or_postLayerNorm)
-        launch_fused_add2<T>(buf_2, buf_3, buf_1, bsz, _seq_length, _hidden_size, _stream);
-
-    if (_pre_or_postLayerNorm) {
-        if (_attn_layer_norm.UseMean())
-            _attn_layer_norm.BackwardFusedAdd(bsz_seq,
-                                              buf_3,
-                                              grad_output_ptr,
-                                              attn_nw_ptr,
-                                              grad_attn_nw_ptr,
-                                              grad_attn_nb_ptr,
-                                              streams,
-                                              buf_0,
-                                              add_res_ptr);
-
-        else
-            _attn_layer_norm.BackwardFusedAdd(bsz_seq,
-                                              buf_3,
-                                              grad_output_ptr,
-                                              attn_nw_ptr,
-                                              attn_nb_ptr,
-                                              grad_attn_nw_ptr,
-                                              grad_attn_nb_ptr,
-                                              streams,
-                                              buf_0,
-                                              ff1_inp_ptr);
-    } else {
-        if (_attn_layer_norm.UseMean())
-            _attn_layer_norm.Backward(bsz_seq,
-                                      buf_2,
-                                      attn_nw_ptr,
-                                      grad_attn_nw_ptr,
-                                      grad_attn_nb_ptr,
-                                      streams,
-                                      buf_0,
-                                      add_res_ptr);
-
-        else
-            _attn_layer_norm.Backward(bsz_seq,
-                                      buf_2,
-                                      attn_nw_ptr,
-                                      attn_nb_ptr,
-                                      grad_attn_nw_ptr,
-                                      grad_attn_nb_ptr,
-                                      streams,
-                                      buf_0,
-                                      ff1_inp_ptr);
-    }
-
-    _attn_output_dropout.Backward(bsz_seq, buf_2, buf_0, _stream);
-
-    T* attn_output_dropout_buf = _attn_output_dropout.HasDropout() ? buf_2 : buf_0;
-
-    _attn_out_linear.Backward(bsz_seq,
-                              attn_output_dropout_buf,
-                              attn_o_inp_ptr,
-                              attn_ow_ptr,
-                              grad_attn_ow_ptr,
-                              grad_attn_ob_ptr,
-                              _cublasHandle,
-                              _stream,
-                              buf_1);
-
-    launch_transform_0213<T>(buf_2, buf_1, bsz, _seq_length, _hidden_size, _heads, _stream);
+    launch_transform_0213<T>(buf_2, grad_output_ptr, bsz, _seq_length, _hidden_size, _heads, _stream);
 
     if (_attn_prob_dropout.HasDropout()) {
         if (_attn_dropout_checkpoint)
@@ -638,14 +429,6 @@ std::vector<torch::Tensor> ds_transformer_forward(int layer_id,
                                                   const torch::Tensor& input_mask,
                                                   const torch::Tensor& attn_qkvw,
                                                   const torch::Tensor& attn_qkvb,
-                                                  const torch::Tensor& attn_ow,
-                                                  const torch::Tensor& attn_ob,
-                                                  const torch::Tensor& attn_nw,
-                                                  const torch::Tensor& attn_nb,
-                                                  const torch::Tensor& inter_w,
-                                                  const torch::Tensor& inter_b,
-                                                  const torch::Tensor& output_w,
-                                                  const torch::Tensor& output_b,
                                                   const torch::Tensor& norm_w,
                                                   const torch::Tensor& norm_b,
                                                   bool training_mode,
@@ -658,14 +441,6 @@ std::vector<torch::Tensor> ds_transformer_forward(int layer_id,
     CHECK_INPUT(input_mask);
     CHECK_INPUT(attn_qkvw);
     CHECK_INPUT(attn_qkvb);
-    CHECK_INPUT(attn_ow);
-    CHECK_INPUT(attn_ob);
-    CHECK_INPUT(attn_nw);
-    CHECK_INPUT(attn_nb);
-    CHECK_INPUT(inter_w);
-    CHECK_INPUT(inter_b);
-    CHECK_INPUT(output_w);
-    CHECK_INPUT(output_b);
     CHECK_INPUT(norm_w);
     CHECK_INPUT(norm_b);
 
@@ -675,14 +450,6 @@ std::vector<torch::Tensor> ds_transformer_forward(int layer_id,
     const T* input_mask_ptr = (const T*)input_mask.data_ptr();
     const T* attn_qkvw_ptr = (const T*)attn_qkvw.data_ptr();
     const T* attn_qkvb_ptr = (const T*)attn_qkvb.data_ptr();
-    const T* attn_ow_ptr = (const T*)attn_ow.data_ptr();
-    const T* attn_ob_ptr = (const T*)attn_ob.data_ptr();
-    const T* attn_nw_ptr = (const T*)attn_nw.data_ptr();
-    const T* attn_nb_ptr = (const T*)attn_nb.data_ptr();
-    const T* inter_w_ptr = (const T*)inter_w.data_ptr();
-    const T* inter_b_ptr = (const T*)inter_b.data_ptr();
-    const T* output_w_ptr = (const T*)output_w.data_ptr();
-    const T* output_b_ptr = (const T*)output_b.data_ptr();
     const T* norm_w_ptr = (const T*)norm_w.data_ptr();
     const T* norm_b_ptr = (const T*)norm_b.data_ptr();
 
@@ -723,7 +490,7 @@ std::vector<torch::Tensor> ds_transformer_forward(int layer_id,
     auto inp_norm = ((prelayernorm || !normalize_invertible) ? torch::empty_like(input) : output);
     auto add_res = (normalize_invertible ? inp_norm : torch::empty_like(input));
     auto attn_o_inp = torch::empty_like(input);
-    auto qkv_tf = torch::empty({(bsz * seq_len), output_w.size(0) * 3}, options);
+    auto qkv_tf = torch::empty({(bsz * seq_len), attn_qkvw.size(1) * 3}, options);
 
     auto attn_prob_dropout_mask =
         torch::empty({(bsz * layer->GetNumHeads() * seq_len), seq_len}, uint8_options);
@@ -740,17 +507,17 @@ std::vector<torch::Tensor> ds_transformer_forward(int layer_id,
     T* inp_norm_ptr = (T*)inp_norm.data_ptr();
     T* add_res_ptr = (T*)add_res.data_ptr();
     T* q_tf_ptr = (T*)qkv_tf.data_ptr();
-    T* k_tf_ptr = q_tf_ptr + (bsz * seq_len * output_w.size(0));  //(T*)k_tf.data_ptr();
-    T* v_tf_ptr = k_tf_ptr + (bsz * seq_len * output_w.size(0));  //(T*)v_tf.data_ptr();
+    T* k_tf_ptr = q_tf_ptr + (bsz * seq_len * attn_qkvw.size(1));  //(T*)k_tf.data_ptr();
+    T* v_tf_ptr = k_tf_ptr + (bsz * seq_len * attn_qkvw.size(1));  //(T*)v_tf.data_ptr();
     T* attn_o_inp_ptr = (T*)attn_o_inp.data_ptr();
 
-    torch::Tensor ff2_inp = torch::empty({(bsz * seq_len), output_w.size(1)}, options);
-    torch::Tensor gelu_inp =
-        (gelu_checkpoint ? ff2_inp : torch::empty({(bsz * seq_len), output_w.size(1)}, options));
-    auto ff1_inp = torch::empty_like(input);
-    T* ff2_inp_ptr = (T*)ff2_inp.data_ptr();
-    T* gelu_inp_ptr = (T*)gelu_inp.data_ptr();
-    T* ff1_inp_ptr = (T*)ff1_inp.data_ptr();
+    // torch::Tensor ff2_inp = torch::empty({(bsz * seq_len), output_w.size(1)}, options);
+    // torch::Tensor gelu_inp =
+    //     (gelu_checkpoint ? ff2_inp : torch::empty({(bsz * seq_len), output_w.size(1)}, options));
+    // auto ff1_inp = torch::empty_like(input);
+    // T* ff2_inp_ptr = (T*)ff2_inp.data_ptr();
+    // T* gelu_inp_ptr = (T*)gelu_inp.data_ptr();
+    // T* ff1_inp_ptr = (T*)ff1_inp.data_ptr();
 
     torch::Tensor soft_out =
         torch::empty({(bsz * layer->GetNumHeads() * seq_len), seq_len}, options);
@@ -775,14 +542,6 @@ std::vector<torch::Tensor> ds_transformer_forward(int layer_id,
                    input_mask_ptr,
                    attn_qkvw_ptr,
                    attn_qkvb_ptr,
-                   attn_ow_ptr,
-                   attn_ob_ptr,
-                   attn_nw_ptr,
-                   attn_nb_ptr,
-                   inter_w_ptr,
-                   inter_b_ptr,
-                   output_w_ptr,
-                   output_b_ptr,
                    norm_w_ptr,
                    norm_b_ptr,
                    out_ptr,
@@ -793,10 +552,7 @@ std::vector<torch::Tensor> ds_transformer_forward(int layer_id,
                    soft_out_ptr,
                    ctx_bufB_ptr,
                    attn_o_inp_ptr,
-                   add_res_ptr,
-                   ff1_inp_ptr,
-                   gelu_inp_ptr,
-                   ff2_inp_ptr);
+                   add_res_ptr);
 
     return {output,
             inp_norm,
@@ -805,9 +561,6 @@ std::vector<torch::Tensor> ds_transformer_forward(int layer_id,
             ctx_bufB,
             attn_o_inp,
             add_res,
-            ff1_inp,
-            gelu_inp,
-            ff2_inp,
             attn_prob_dropout_mask,
             attn_output_dropout_mask,
             layer_output_dropout_mask,
@@ -827,9 +580,6 @@ std::vector<torch::Tensor> ds_transformer_backward(int layer_id,
                                                    const torch::Tensor& ctx_bufB,
                                                    const torch::Tensor& attn_o_inp,
                                                    const torch::Tensor& add_res,
-                                                   const torch::Tensor& ff1_inp,
-                                                   const torch::Tensor& gelu_inp,
-                                                   const torch::Tensor& ff2_inp,
                                                    const torch::Tensor& attn_prob_dropout_mask,
                                                    const torch::Tensor& attn_output_dropout_mask,
                                                    const torch::Tensor& layer_output_dropout_mask,
@@ -841,14 +591,6 @@ std::vector<torch::Tensor> ds_transformer_backward(int layer_id,
                                                    const torch::Tensor& input_mask,
                                                    const torch::Tensor& attn_qkvw,
                                                    const torch::Tensor& attn_qkvb,
-                                                   const torch::Tensor& attn_ow,
-                                                   const torch::Tensor& attn_ob,
-                                                   const torch::Tensor& attn_nw,
-                                                   const torch::Tensor& attn_nb,
-                                                   const torch::Tensor& inter_w,
-                                                   const torch::Tensor& inter_b,
-                                                   const torch::Tensor& output_w,
-                                                   const torch::Tensor& output_b,
                                                    const torch::Tensor& norm_w,
                                                    const torch::Tensor& norm_b)
 {
@@ -861,21 +603,10 @@ std::vector<torch::Tensor> ds_transformer_backward(int layer_id,
     CHECK_INPUT(soft_out);
     CHECK_INPUT(ctx_bufB);
     CHECK_INPUT(attn_o_inp);
-    CHECK_INPUT(ff1_inp);
-    CHECK_INPUT(gelu_inp);
-    CHECK_INPUT(ff2_inp);
     CHECK_INPUT(input);
     CHECK_INPUT(input_mask);
     CHECK_INPUT(attn_qkvw);
     CHECK_INPUT(attn_qkvb);
-    CHECK_INPUT(attn_ow);
-    CHECK_INPUT(attn_ob);
-    CHECK_INPUT(attn_nw);
-    CHECK_INPUT(attn_nb);
-    CHECK_INPUT(inter_w);
-    CHECK_INPUT(inter_b);
-    CHECK_INPUT(output_w);
-    CHECK_INPUT(output_b);
     CHECK_INPUT(norm_w);
     CHECK_INPUT(norm_b);
 
@@ -907,14 +638,6 @@ std::vector<torch::Tensor> ds_transformer_backward(int layer_id,
     auto grad_input = torch::empty_like(input);
     auto grad_attn_qkvw = torch::empty_like(attn_qkvw);
     auto grad_attn_qkvb = torch::empty_like(attn_qkvb);
-    auto grad_attn_ow = torch::empty_like(attn_ow);
-    auto grad_attn_ob = torch::empty_like(attn_ob);
-    auto grad_attn_nw = torch::empty_like(attn_nw);
-    auto grad_attn_nb = torch::empty_like(attn_nb);
-    auto grad_inter_w = torch::empty_like(inter_w);
-    auto grad_inter_b = torch::empty_like(inter_b);
-    auto grad_output_w = torch::empty_like(output_w);
-    auto grad_output_b = torch::empty_like(output_b);
     auto grad_norm_w = torch::empty_like(norm_w);
     auto grad_norm_b = torch::empty_like(norm_b);
 
@@ -926,23 +649,14 @@ std::vector<torch::Tensor> ds_transformer_backward(int layer_id,
     const T* q_tf_ptr = (const T*)qkv_tf.data_ptr();
     const T* add_res_ptr = (const T*)add_res.data_ptr();
     const T* k_tf_ptr =
-        q_tf_ptr + (bsz * layer->GetSeqLength() * output_w.size(0));  //(const T*)k_tf.data_ptr();
+        q_tf_ptr + (bsz * layer->GetSeqLength() * attn_qkvw.size(1));  //(const T*)k_tf.data_ptr();
     const T* v_tf_ptr =
-        k_tf_ptr + (bsz * layer->GetSeqLength() * output_w.size(0));  //(const T*)v_tf.data_ptr();
-    const T* ff1_inp_ptr = (const T*)ff1_inp.data_ptr();
-    const T* gelu_inp_ptr = (const T*)gelu_inp.data_ptr();
-    const T* ff2_inp_ptr = (const T*)ff2_inp.data_ptr();
+        k_tf_ptr + (bsz * layer->GetSeqLength() * attn_qkvw.size(1));  //(const T*)v_tf.data_ptr();
     const T* ctx_bufB_ptr = (const T*)ctx_bufB.data_ptr();
     const T* soft_out_ptr = (const T*)soft_out.data_ptr();
     const T* attn_o_inp_ptr = (const T*)attn_o_inp.data_ptr();
     const T* input_mask_ptr = (const T*)input_mask.data_ptr();
     const T* attn_qkvw_ptr = (const T*)attn_qkvw.data_ptr();
-    const T* attn_ow_ptr = (const T*)attn_ow.data_ptr();
-    const T* attn_nw_ptr = (const T*)attn_nw.data_ptr();
-    const T* attn_nb_ptr = (const T*)attn_nb.data_ptr();
-    const T* inter_w_ptr = (const T*)inter_w.data_ptr();
-    const T* inter_b_ptr = (const T*)inter_b.data_ptr();
-    const T* output_w_ptr = (const T*)output_w.data_ptr();
     const T* norm_w_ptr = (const T*)norm_w.data_ptr();
     const T* norm_b_ptr = (const T*)norm_b.data_ptr();
 
@@ -950,14 +664,6 @@ std::vector<torch::Tensor> ds_transformer_backward(int layer_id,
     T* grad_input_ptr = (T*)grad_input.data_ptr();
     T* grad_attn_qkvw_ptr = (T*)grad_attn_qkvw.data_ptr();
     T* grad_attn_qkvb_ptr = (T*)grad_attn_qkvb.data_ptr();
-    T* grad_attn_ow_ptr = (T*)grad_attn_ow.data_ptr();
-    T* grad_attn_ob_ptr = (T*)grad_attn_ob.data_ptr();
-    T* grad_attn_nw_ptr = (T*)grad_attn_nw.data_ptr();
-    T* grad_attn_nb_ptr = (T*)grad_attn_nb.data_ptr();
-    T* grad_inter_w_ptr = (T*)grad_inter_w.data_ptr();
-    T* grad_inter_b_ptr = (T*)grad_inter_b.data_ptr();
-    T* grad_output_w_ptr = (T*)grad_output_w.data_ptr();
-    T* grad_output_b_ptr = (T*)grad_output_b.data_ptr();
     T* grad_norm_w_ptr = (T*)grad_norm_w.data_ptr();
     T* grad_norm_b_ptr = (T*)grad_norm_b.data_ptr();
 
@@ -981,45 +687,19 @@ std::vector<torch::Tensor> ds_transformer_backward(int layer_id,
                     ctx_bufB_ptr,
                     attn_o_inp_ptr,
                     add_res_ptr,
-                    ff1_inp_ptr,
-                    gelu_inp_ptr,
-                    ff2_inp_ptr,
                     input_mask_ptr,
                     attn_qkvw_ptr,
-                    attn_ow_ptr,
-                    attn_nw_ptr,
-                    attn_nb_ptr,
-                    inter_w_ptr,
-                    inter_b_ptr,
-                    output_w_ptr,
                     norm_w_ptr,
                     norm_b_ptr,
 
                     grad_input_ptr,
                     grad_attn_qkvw_ptr,
                     grad_attn_qkvb_ptr,
-                    grad_attn_ow_ptr,
-                    grad_attn_ob_ptr,
-                    grad_attn_nw_ptr,
-                    grad_attn_nb_ptr,
-                    grad_inter_w_ptr,
-                    grad_inter_b_ptr,
-                    grad_output_w_ptr,
-                    grad_output_b_ptr,
                     grad_norm_w_ptr,
                     grad_norm_b_ptr);
 
     return {grad_input,
             grad_attn_qkvw,
-            grad_attn_qkvb,
-            grad_attn_ow,
-            grad_attn_ob,
-            grad_attn_nw,
-            grad_attn_nb,
-            grad_inter_w,
-            grad_inter_b,
-            grad_output_w,
-            grad_output_b,
             grad_norm_w,
             grad_norm_b};
 }

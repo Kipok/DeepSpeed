@@ -162,14 +162,6 @@ class DeepSpeedTransformerFunction(Function):
                 layer_id,
                 attn_qkvw,
                 attn_qkvb,
-                attn_ow,
-                attn_ob,
-                attn_nw,
-                attn_nb,
-                inter_w,
-                inter_b,
-                output_w,
-                output_b,
                 norm_w,
                 norm_b,
                 config):
@@ -196,9 +188,6 @@ class DeepSpeedTransformerFunction(Function):
          ctx_bufB,
          attn_o_inp,
          add_res,
-         ff1_inp,
-         gelu_inp,
-         ff2_inp,
          attn_prob_dropout_mask,
          attn_output_dropout_mask,
          layer_output_dropout_mask,
@@ -210,14 +199,6 @@ class DeepSpeedTransformerFunction(Function):
                                          input_mask,
                                          attn_qkvw,
                                          attn_qkvb,
-                                         attn_ow,
-                                         attn_ob,
-                                         attn_nw,
-                                         attn_nb,
-                                         inter_w,
-                                         inter_b,
-                                         output_w,
-                                         output_b,
                                          norm_w,
                                          norm_b,
                                          config.training,
@@ -225,7 +206,7 @@ class DeepSpeedTransformerFunction(Function):
                                          config.attn_dropout_checkpoint,
                                          config.normalize_invertible,
                                          config.gelu_checkpoint)
-
+        output = attn_o_inp
         # For testing only.
         if grads is not None:
             for i in [2]:
@@ -261,14 +242,6 @@ class DeepSpeedTransformerFunction(Function):
                 ctx.save_for_backward(input_mask,
                                       attn_qkvw,
                                       attn_qkvb,
-                                      attn_ow,
-                                      attn_ob,
-                                      attn_nw,
-                                      attn_nb,
-                                      inter_w,
-                                      inter_b,
-                                      output_w,
-                                      output_b,
                                       norm_w,
                                       norm_b)
             else:
@@ -277,14 +250,6 @@ class DeepSpeedTransformerFunction(Function):
                                       input_mask,
                                       attn_qkvw,
                                       attn_qkvb,
-                                      attn_ow,
-                                      attn_ob,
-                                      attn_nw,
-                                      attn_nb,
-                                      inter_w,
-                                      inter_b,
-                                      output_w,
-                                      output_b,
                                       norm_w,
                                       norm_b)
 
@@ -294,21 +259,14 @@ class DeepSpeedTransformerFunction(Function):
 
             ctx.qkv_tf = qkv_tf
             ctx.soft_inp = soft_inp
+            ctx.attn_o_inp = attn_o_inp
+            ctx.add_res = add_res
             if not config.attn_dropout_checkpoint:
                 ctx.ctx_bufB = ctx_bufB
-
-            ctx.attn_o_inp = attn_o_inp
-            if not config.normalize_invertible:
-                ctx.add_res = add_res
 
             ctx.attn_layer_norm_mean = attn_layer_norm_mean
             ctx.layer_norm_mean = layer_norm_mean
 
-            ctx.ff1_inp = ff1_inp
-            if not config.gelu_checkpoint:
-                ctx.gelu_inp = gelu_inp
-
-            ctx.ff2_inp = ff2_inp
             ctx.attn_prob_dropout_mask = attn_prob_dropout_mask
             ctx.attn_output_dropout_mask = attn_output_dropout_mask
             ctx.layer_output_dropout_mask = layer_output_dropout_mask
@@ -337,14 +295,6 @@ class DeepSpeedTransformerFunction(Function):
             (input_mask,
              attn_qkvw,
              attn_qkvb,
-             attn_ow,
-             attn_ob,
-             attn_nw,
-             attn_nb,
-             inter_w,
-             inter_b,
-             output_w,
-             output_b,
              norm_w,
              norm_b) = ctx.saved_tensors
         else:
@@ -353,14 +303,6 @@ class DeepSpeedTransformerFunction(Function):
              input_mask,
              attn_qkvw,
              attn_qkvb,
-             attn_ow,
-             attn_ob,
-             attn_nw,
-             attn_nb,
-             inter_w,
-             inter_b,
-             output_w,
-             output_b,
              norm_w,
              norm_b) = ctx.saved_tensors
 
@@ -369,15 +311,6 @@ class DeepSpeedTransformerFunction(Function):
 
         (grad_input,
          grad_attn_qkvw,
-         grad_attn_qkvb,
-         grad_attn_ow,
-         grad_attn_ob,
-         grad_attn_nw,
-         grad_attn_nb,
-         grad_inter_w,
-         grad_inter_b,
-         grad_output_w,
-         grad_output_b,
          grad_norm_w,
          grad_norm_b) = backward_func(
              ctx.config.layer_id,
@@ -390,10 +323,7 @@ class DeepSpeedTransformerFunction(Function):
              ctx.soft_inp,
              (ctx.soft_inp if ctx.config.attn_dropout_checkpoint else ctx.ctx_bufB),
              ctx.attn_o_inp,
-             (ctx.ff1_inp if ctx.config.normalize_invertible else ctx.add_res),
-             ctx.ff1_inp,
-             (ctx.ff2_inp if ctx.config.gelu_checkpoint else ctx.gelu_inp),
-             ctx.ff2_inp,
+             ctx.add_res,
              ctx.attn_prob_dropout_mask,
              ctx.attn_output_dropout_mask,
              ctx.layer_output_dropout_mask,
@@ -406,14 +336,6 @@ class DeepSpeedTransformerFunction(Function):
              input_mask,
              attn_qkvw,
              attn_qkvb,
-             attn_ow,
-             attn_ob,
-             attn_nw,
-             attn_nb,
-             inter_w,
-             inter_b,
-             output_w,
-             output_b,
              norm_w,
              norm_b)
 
@@ -421,10 +343,7 @@ class DeepSpeedTransformerFunction(Function):
         ctx.qkv_tf = None
         ctx.soft_inp = None
         ctx.ctx_bufB = None
-        ctx.gelu_inp = None
-        ctx.ff2_inp = None
         ctx.attn_o_inp = None
-        ctx.ff1_inp = None
         ctx.add_res = None
         ctx.inp_norm = None
         ctx.config = None
@@ -445,15 +364,7 @@ class DeepSpeedTransformerFunction(Function):
                 None,
                 None,
                 grad_attn_qkvw,
-                grad_attn_qkvb,
-                grad_attn_ow,
-                grad_attn_ob,
-                grad_attn_nw,
-                grad_attn_nb,
-                grad_inter_w,
-                grad_inter_b,
-                grad_output_w,
-                grad_output_b,
+                None,
                 grad_norm_w,
                 grad_norm_b,
                 None)
@@ -474,7 +385,7 @@ class DeepSpeedTransformerLayer(nn.Module):
     """
     layer_id = 0
 
-    def __init__(self, config, initial_weights=None, initial_biases=None):
+    def __init__(self, config, q, kv, input_norm):
         super(DeepSpeedTransformerLayer, self).__init__()
 
         self.config = config
@@ -486,50 +397,13 @@ class DeepSpeedTransformerLayer(nn.Module):
         if self.config.local_rank >= 0:
             torch.cuda.set_device(self.config.local_rank)
 
-        if initial_weights is None and initial_biases is None:
-            self.attn_qkvw = nn.Parameter(
-                torch.Tensor(self.config.hidden_size * 3,
-                             self.config.hidden_size))
-            self.attn_qkvb = nn.Parameter(torch.Tensor(self.config.hidden_size * 3))
-            self.attn_ow = nn.Parameter(
-                torch.Tensor(self.config.hidden_size,
-                             self.config.hidden_size))
-            self.attn_ob = nn.Parameter(torch.Tensor(self.config.hidden_size))
-            self.attn_nw = nn.Parameter(torch.Tensor(self.config.hidden_size))
-            self.attn_nb = nn.Parameter(torch.Tensor(self.config.hidden_size))
-            self.inter_w = nn.Parameter(
-                torch.Tensor(self.config.intermediate_size,
-                             self.config.hidden_size))
-            self.inter_b = nn.Parameter(torch.Tensor(self.config.intermediate_size))
-            self.output_w = nn.Parameter(
-                torch.Tensor(self.config.hidden_size,
-                             self.config.intermediate_size))
-            self.output_b = nn.Parameter(torch.Tensor(self.config.hidden_size))
-            self.norm_w = nn.Parameter(torch.Tensor(self.config.hidden_size))
-            self.norm_b = nn.Parameter(torch.Tensor(self.config.hidden_size))
-            self.init_transformer_weights(self.config.adjust_init_range)
-        else:
-            # For testing only.
-            q = initial_weights[0].data
-            k = initial_weights[1].data
-            v = initial_weights[2].data
-
-            self.attn_qkvw = nn.Parameter(torch.cat((q, k, v)))
+        self.attn_qkvw = nn.Parameter(torch.cat((q.weight, kv.weight)))
             #self.attn_qkvw[i * self.config.hidden_size:(i + 1) * self.config.hidden_size] = \
             #    initial_weights[i].clone()
             #torch.empty_like(initial_weights[i]).data.copy_(initial_weights[i].data)
-            self.attn_qkvb = nn.Parameter(torch.Tensor(self.config.hidden_size * 3))
-            self.attn_qkvb.data.zero_()
-            self.attn_ow = initial_weights[3]
-            self.attn_ob = initial_biases[3]
-            self.attn_nw = initial_weights[4]
-            self.attn_nb = initial_biases[4]
-            self.inter_w = initial_weights[5]
-            self.inter_b = initial_biases[5]
-            self.output_w = initial_weights[6]
-            self.output_b = initial_biases[6]
-            self.norm_w = initial_weights[7]
-            self.norm_b = initial_biases[7]
+        self.attn_qkvb = nn.Parameter(torch.zeros(self.config.hidden_size * 3))
+        self.norm_w = input_norm.weight
+        self.norm_b = input_norm.bias
 
         # Load cuda modules if needed
         global transformer_cuda_module, stochastic_transformer_cuda_module
@@ -567,14 +441,6 @@ class DeepSpeedTransformerLayer(nn.Module):
 
         self.attn_qkvw.data.normal_(mean=0.0, std=self.config.initializer_range)
         self.attn_qkvb.data.zero_()
-        self.attn_ow.data.normal_(mean=0.0, std=output_std)
-        self.attn_ob.data.zero_()
-        self.attn_nw.data.fill_(1.0)
-        self.attn_nb.data.zero_()
-        self.inter_w.data.normal_(mean=0.0, std=self.config.initializer_range)
-        self.inter_b.data.zero_()
-        self.output_w.data.normal_(mean=0.0, std=output_std)
-        self.output_b.data.zero_()
         self.norm_w.data.fill_(1.0)
         self.norm_b.data.zero_()
 
@@ -596,14 +462,6 @@ class DeepSpeedTransformerLayer(nn.Module):
                                                   self.config.layer_id,
                                                   self.attn_qkvw,
                                                   self.attn_qkvb,
-                                                  self.attn_ow,
-                                                  self.attn_ob,
-                                                  self.attn_nw,
-                                                  self.attn_nb,
-                                                  self.inter_w,
-                                                  self.inter_b,
-                                                  self.output_w,
-                                                  self.output_b,
                                                   self.norm_w,
                                                   self.norm_b,
                                                   self.config)
