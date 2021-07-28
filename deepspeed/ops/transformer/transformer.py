@@ -178,6 +178,7 @@ class DeepSpeedTransformerFunction(Function):
                                            device=input.device,
                                            dtype=input.dtype)),
                               1)
+            # input_mask = torch.ones_like(input)
             input_mask = torch.cat((input_mask, torch.ones((inp_size[0], input_mask.shape[1], input_mask.shape[2], \
                                             (16 - (inp_size[1] % 16))), device=input_mask.device, dtype=input_mask.dtype) * -10000), 3)
 
@@ -392,7 +393,7 @@ class DeepSpeedTransformerLayer(nn.Module):
         self.config.layer_id = DeepSpeedTransformerLayer.layer_id
         DeepSpeedTransformerLayer.layer_id = DeepSpeedTransformerLayer.layer_id + 1
 
-        print("DeepSpeed Transformer config is ", self.config.__dict__)
+        # print("DeepSpeed Transformer config is ", self.config.__dict__)
 
         if self.config.local_rank >= 0:
             torch.cuda.set_device(self.config.local_rank)
@@ -432,17 +433,17 @@ class DeepSpeedTransformerLayer(nn.Module):
                           self.config.gelu_checkpoint,
                           self.config.stochastic_mode)
 
-    def init_transformer_weights(self, adjust_init_range=False):
-        num_layers = self.config.num_hidden_layers
-        output_std = self.config.initializer_range
-        if adjust_init_range and self.config.local_rank == 0:
-            print("Accounting for accumulation on the residual path")
-            output_std = self.config.initializer_range / math.sqrt(2.0 * num_layers)
+    # def init_transformer_weights(self, adjust_init_range=False):
+    #     num_layers = self.config.num_hidden_layers
+    #     output_std = self.config.initializer_range
+    #     if adjust_init_range and self.config.local_rank == 0:
+    #         print("Accounting for accumulation on the residual path")
+    #         output_std = self.config.initializer_range / math.sqrt(2.0 * num_layers)
 
-        self.attn_qkvw.data.normal_(mean=0.0, std=self.config.initializer_range)
-        self.attn_qkvb.data.zero_()
-        self.norm_w.data.fill_(1.0)
-        self.norm_b.data.zero_()
+    #     self.attn_qkvw.data.normal_(mean=0.0, std=self.config.initializer_range)
+    #     self.attn_qkvb.data.zero_()
+    #     self.norm_w.data.fill_(1.0)
+    #     self.norm_b.data.zero_()
 
     def forward(self,
                 hidden_states,
