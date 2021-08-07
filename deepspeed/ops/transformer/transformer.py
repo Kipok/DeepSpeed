@@ -7,6 +7,7 @@ import importlib
 import torch
 from torch import nn
 from torch.autograd import Function
+from torch.cuda.amp import custom_fwd, custom_bwd
 
 from ..op_builder import TransformerBuilder, StochasticTransformerBuilder
 
@@ -154,6 +155,7 @@ class DeepSpeedTransformerConfig(TransformerConfig):
 
 class DeepSpeedTransformerFunction(Function):
     @staticmethod
+    @custom_fwd(cast_inputs=torch.float16)
     def forward(ctx,
                 input,
                 input_mask,
@@ -324,6 +326,7 @@ class DeepSpeedTransformerFunction(Function):
             return output
 
     @staticmethod
+    @custom_bwd
     def backward(ctx, grad_output):
         bsz = grad_output.shape[0]
         grad_output_shape = grad_output.size()
@@ -481,7 +484,7 @@ class DeepSpeedTransformerLayer(nn.Module):
         self.config.layer_id = DeepSpeedTransformerLayer.layer_id
         DeepSpeedTransformerLayer.layer_id = DeepSpeedTransformerLayer.layer_id + 1
 
-        print("DeepSpeed Transformer config is ", self.config.__dict__)
+        # print("DeepSpeed Transformer config is ", self.config.__dict__)
 
         if self.config.local_rank >= 0:
             torch.cuda.set_device(self.config.local_rank)
@@ -562,7 +565,7 @@ class DeepSpeedTransformerLayer(nn.Module):
         num_layers = self.config.num_hidden_layers
         output_std = self.config.initializer_range
         if adjust_init_range and self.config.local_rank == 0:
-            print("Accounting for accumulation on the residual path")
+            # print("Accounting for accumulation on the residual path")
             output_std = self.config.initializer_range / math.sqrt(2.0 * num_layers)
 
         self.attn_qkvw.data.normal_(mean=0.0, std=self.config.initializer_range)
@@ -607,3 +610,4 @@ class DeepSpeedTransformerLayer(nn.Module):
                                                   self.norm_w,
                                                   self.norm_b,
                                                   self.config)
+
